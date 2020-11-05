@@ -133,6 +133,10 @@ struct nested_calls {
  * have an entry of this type linked to the "rbr" RB tree.
  * Avoid increasing the size of this struct, there can be many thousands
  * of these on a server and we do not want this to take another cache line.
+ *
+ * 每当调用epoll_ctl增加一个fd的时候，内核就会创一个epitem实例，并且把这个实例作为红黑树的一个子节点，
+ * 增加到eventpoll结构体的rbr红黑树中。
+ * 后续查找每个fd上是否有事件发生都是通过红黑树上的epitem来操作的。
  */
 struct epitem {
 	union {
@@ -143,6 +147,7 @@ struct epitem {
 	};
 
 	/* List header used to link this structure to the eventpoll ready list */
+	// 将epitem连接到eventpoll里面的rdllist的list指针
 	struct list_head rdllink;
 
 	/*
@@ -152,15 +157,18 @@ struct epitem {
 	struct epitem *next;
 
 	/* The file descriptor information this item refers to */
+	// 当前epitem监听的fd
 	struct epoll_filefd ffd;
 
 	/* Number of active wait queue attached to poll operations */
+	// 记录当前文件被监听的次数
 	int nwait;
 
 	/* List containing poll wait queues */
 	struct list_head pwqlist;
 
 	/* The "container" of this item */
+	// 当前epollitem所属的eventpoll
 	struct eventpoll *ep;
 
 	/* List header used to link this item to the "struct file" items list */
@@ -177,6 +185,11 @@ struct epitem {
  * This structure is stored inside the "private_data" member of the file
  * structure and represents the main data structure for the eventpoll
  * interface.
+ * 
+ * 这个数据结构是在我们调用了epoll_create之后内核创建的一个句柄，代表一个epoll实例，该描述符返回给应用进程，
+ * 后续调用epoll_ctrl和epoll_wait都是对这个数据结构进行操作。
+ * 这个数据会保存在epoll_create创建的匿名文件的private_data字段中
+ * 
  */
 struct eventpoll {
 	/*
@@ -188,18 +201,21 @@ struct eventpoll {
 	struct mutex mtx;
 
 	/* Wait queue used by sys_epoll_wait() */
+	// 进程等待队列，执行了epoll_wait进入等待状态的进程会存放到这个队列中
 	wait_queue_head_t wq;
 
 	/* Wait queue used by file->poll() */
 	wait_queue_head_t poll_wait;
 
 	/* List of ready file descriptors */
+	// 事件就绪列表，元素为epitem
 	struct list_head rdllist;
 
 	/* Lock which protects rdllist and ovflist */
 	rwlock_t lock;
 
 	/* RB tree root used to store monitored fd structs */
+	// 用于快速查找fd的红黑树
 	struct rb_root_cached rbr;
 
 	/*
@@ -215,6 +231,7 @@ struct eventpoll {
 	/* The user that created the eventpoll descriptor */
 	struct user_struct *user;
 
+	// eventloop对应的匿名文件
 	struct file *file;
 
 	/* used to optimize loop detection check */
@@ -232,6 +249,7 @@ struct eventpoll {
 };
 
 /* Wait structure used by the poll hooks */
+// 每当一个fd关联到epoll实例的时候，就会有一个eppoll_entry
 struct eppoll_entry {
 	/* List header used to link this structure to the "struct epitem" */
 	struct list_head llink;
